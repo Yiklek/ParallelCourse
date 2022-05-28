@@ -6,6 +6,10 @@
 #include "mpi.h"
 #include <cblas.h>
 
+#ifdef CUDA_ENABLE
+#include <cugemm.h>
+#endif
+
 using namespace std;
 
 // void CheckStatus(MPI_Status &status) {
@@ -14,11 +18,30 @@ using namespace std;
 //     }
 // }
 
+// row first
+void display_mat(float * mat, int m, int n){
+    for (int i = 0; i < m; i++) {
+      for (int j = 0; j < n; j++){
+/*
+        if (int(resMat[i * k + j]) != n) {
+          cout << resMat[i * k + j] << "error\n";
+          exit(-1);
+        }
+*/
+      cout << mat[i * n + j] << ' ';
+}
+      cout << endl;
+    }
+}
+
 void randMat(int rows, int cols, float *&Mat) {
   Mat = new float[rows * cols];
-  for (int i = 0; i < rows; i++)
+  for (int i = 0; i < rows; i++){
     for (int j = 0; j < cols; j++)
-      Mat[i * cols + j] = 1.0;
+      {
+        Mat[i * cols + j] = i * cols + j;
+      }
+  }
 }
 
 void openmp_sgemm(int m, int n, int k, float *&leftMat, float *&rightMat,
@@ -43,7 +66,7 @@ void blas_sgemm(int m, int n, int k, float *&leftMat, float *&rightMat,
 }
 
 void mpi_sgemm(int m, int n, int k, float *&leftMat, float *&rightMat,
-               float *&resultMat, int rank, int worldsize, bool blas) {
+               float *&resultMat, int rank, int worldsize, int level) {
   int rowBlock = sqrt(worldsize);
   if (rowBlock * rowBlock > worldsize)
     rowBlock -= 1;
@@ -134,10 +157,22 @@ void mpi_sgemm(int m, int n, int k, float *&leftMat, float *&rightMat,
     colStride = ((rank % colBlock) == colBlock - 1)
                     ? k - (colBlock - 1) * (k / colBlock)
                     : k / colBlock;
-    if (!blas)
+      // cout << "left \n" << rowStride << " " << n << endl;
+      // display_mat(leftMat, rowStride, n);
+      // cout << endl;
+      // cout << "right \n" << n << " " << colStride << endl;
+      // display_mat(rightMat, colStride, n);
+    if (level == 0){
       openmp_sgemm(rowStride, n, colStride, leftMat, rightMat, res);
-    else
+    }
+    else if(level == 1){
       blas_sgemm(rowStride, n, colStride, leftMat, rightMat, res);
+    }
+    #ifdef CUDA_ENABLE
+    else{
+      cu_gemm_float(rowStride, n, colStride, leftMat, rightMat, res);
+    }
+    #endif
   }
   MPI_Barrier(MPI_COMM_WORLD);
 
@@ -183,7 +218,11 @@ void mpi_sgemm(int m, int n, int k, float *&leftMat, float *&rightMat,
 
 int main(int argc, char *argv[]) {
   if (argc != 5) {
-    cout << "Usage: " << argv[0] << " M N K use-blas\n";
+    cout << "Usage: " << argv[0] << " M N K level \n(M, N) x (N, K)\n0: openmp 1: openblas";
+    #ifdef CUDA_ENABLE
+      cout << " 2: cublas";
+    #endif
+    cout << endl;
     exit(-1);
   }
 
@@ -215,17 +254,7 @@ int main(int argc, char *argv[]) {
          << (stop.tv_sec - start.tv_sec) * 1000.0 +
                 (stop.tv_usec - start.tv_usec) / 1000.0
          << " ms" << endl;
-
-    for (int i = 0; i < m; i++) {
-      for (int j = 0; j < k; j++){
-        if (int(resMat[i * k + j]) != n) {
-          cout << resMat[i * k + j] << "error\n";
-          exit(-1);
-        }
-//      cout << resMat[i * k + j] << ' ';
-}
-//      cout << endl;
-    }
+    //display_mat(resMat, m, k);
   }
   MPI_Finalize();
 }  
