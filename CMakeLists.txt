@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.16)
 project(gemm)
 set(CMAKE_CXX_COMPILER mpic++)
 set(CMAKE_C_COMPILER mpicc)
-find_package(MPI)
+#find_package(MPI)
 find_package(BLAS REQUIRED)
 
 
