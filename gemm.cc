@@ -5,6 +5,8 @@
 #include <iostream>
 #include "mpi.h"
 #include <cblas.h>
+#include <thread>
+#include <vector>
 
 #ifdef CUDA_ENABLE
 #include <cugemm.h>
@@ -34,12 +36,22 @@ void display_mat(float * mat, int m, int n){
     }
 }
 
+void display_time(int rank, struct timeval&  start, struct timeval& stop, string message){
+    if(rank == 0){
+	    cout << message << " "
+		 << (stop.tv_sec - start.tv_sec) * 1000.0 +
+			(stop.tv_usec - start.tv_usec) / 1000.0
+		 << " ms" << endl;
+    }
+}
+
 void randMat(int rows, int cols, float *&Mat) {
   Mat = new float[rows * cols];
   for (int i = 0; i < rows; i++){
     for (int j = 0; j < cols; j++)
       {
-        Mat[i * cols + j] = i * cols + j;
+        //Mat[i * cols + j] = i * cols + j;
+        Mat[i * cols + j] = 1;
       }
   }
 }
@@ -81,6 +93,9 @@ void mpi_sgemm(int m, int n, int k, float *&leftMat, float *&rightMat,
   float *res;
 
   if (rank == 0) {
+    struct timeval start, stop;
+    gettimeofday(&start, NULL);
+    /*
     float *buf = new float[k * n];
     // transpose right Mat
     for (int r = 0; r < n; r++) {
@@ -96,7 +111,11 @@ void mpi_sgemm(int m, int n, int k, float *&leftMat, float *&rightMat,
     }
 
     delete buf;
+    */
+    gettimeofday(&stop, NULL);
+    display_time(rank, start, stop, "transpose");
 
+    gettimeofday(&start, NULL);
     MPI_Request sendRequest[2 * worldsize];
     MPI_Status status[2 * worldsize];
     for (int rowB = 0; rowB < rowBlock; rowB++) {
@@ -126,6 +145,8 @@ void mpi_sgemm(int m, int n, int k, float *&leftMat, float *&rightMat,
       }
     }
     res = new float[(m / rowBlock) * (k / colBlock)];
+    gettimeofday(&stop, NULL);
+    display_time(rank, start, stop, "scatter");
   } else {
     if (rank < worldsize) {
       MPI_Status status[2];
@@ -157,11 +178,13 @@ void mpi_sgemm(int m, int n, int k, float *&leftMat, float *&rightMat,
     colStride = ((rank % colBlock) == colBlock - 1)
                     ? k - (colBlock - 1) * (k / colBlock)
                     : k / colBlock;
-      // cout << "left \n" << rowStride << " " << n << endl;
+       cout << "left \n" << rowStride << " " << n << endl;
       // display_mat(leftMat, rowStride, n);
       // cout << endl;
-      // cout << "right \n" << n << " " << colStride << endl;
+       cout << "right \n" << n << " " << colStride << endl;
       // display_mat(rightMat, colStride, n);
+    struct timeval start, stop;
+    gettimeofday(&start, NULL);
     if (level == 0){
       openmp_sgemm(rowStride, n, colStride, leftMat, rightMat, res);
     }
@@ -173,34 +196,56 @@ void mpi_sgemm(int m, int n, int k, float *&leftMat, float *&rightMat,
       cu_gemm_float(rowStride, n, colStride, leftMat, rightMat, res);
     }
     #endif
+    gettimeofday(&stop, NULL);
+    display_time(rank, start, stop, "gemm");
   }
   MPI_Barrier(MPI_COMM_WORLD);
 
   if (rank == 0) {
-    MPI_Status status;
-    float *buf = new float[(m - (rowBlock - 1) * (m / rowBlock)) *
-                           (k - (colBlock - 1) * (k / colBlock))];
-    float *temp_res;
+    struct timeval start, stop;
+    gettimeofday(&start, NULL);
+    vector<thread> ts;
     for (int rowB = 0; rowB < rowBlock; rowB++) {
       for (int colB = 0; colB < colBlock; colB++) {
-        rowStride = (rowB == rowBlock - 1) ? m - (rowBlock - 1) * (m / rowBlock)
-                                           : m / rowBlock;
-        colStride = (colB == colBlock - 1) ? k - (colBlock - 1) * (k / colBlock)
-                                           : k / colBlock;
-        int recvfrom = rowB * colBlock + colB;
-        if (recvfrom != 0) {
-          temp_res = buf;
-          MPI_Recv(temp_res, rowStride * colStride, MPI_FLOAT, recvfrom, 0,
-                   MPI_COMM_WORLD, &status);
-        } else {
-          temp_res = res;
-        }
-        for (int r = 0; r < rowStride; r++)
-          for (int c = 0; c < colStride; c++)
-            resultMat[rowB * (m / rowBlock) * k + colB * (k / colBlock) +
-                      r * k + c] = temp_res[r * colStride + c];
+                MPI_Status status;
+		//MPI_Request *status = new MPI_Request();
+		int len = (m - (rowBlock - 1) * (m / rowBlock)) * (k - (colBlock - 1) * (k / colBlock));
+		cout << len <<endl;
+		float *buf = new float[len];
+		float *temp_res;
+		int rowStride = (rowB == rowBlock - 1) ? m - (rowBlock - 1) * (m / rowBlock)
+						   : m / rowBlock;
+		int colStride = (colB == colBlock - 1) ? k - (colBlock - 1) * (k / colBlock)
+						   : k / colBlock;
+		int recvfrom = rowB * colBlock + colB;
+		//cout << "rowStride: " << rowStride << " colstride: " << colStride << endl;
+		//cout << "receive: " << rowB << " " << colB << endl;
+		if (recvfrom != 0) {
+		  temp_res = buf;
+		  MPI_Recv(temp_res, rowStride * colStride, MPI_FLOAT, recvfrom, 0,
+			   MPI_COMM_WORLD, &status);
+		} else {
+		  temp_res = res;
+		}
+	thread t([=, &resultMat](){
+	        //if(recvfrom != 0) MPI_Wait(status, MPI_STATUSES_IGNORE);
+		for (int r = 0; r < rowStride; r++)
+		  for (int c = 0; c < colStride; c++)
+		    resultMat[rowB * (m / rowBlock) * k + colB * (k / colBlock) +
+			      r * k + c] = temp_res[r * colStride + c];
+		cout << "recv end" << endl;
+		delete temp_res;
+		//delete status;
+	});
+	ts.push_back(move(t));
       }
     }
+    for(auto &t: ts){
+	if(t.joinable()) t.join();
+    }
+    gettimeofday(&stop, NULL);
+    display_time(rank, start, stop, "gather");
+
   } else {
     rowStride = ((rank / colBlock) == rowBlock - 1)
                     ? m - (rowBlock - 1) * (m / rowBlock)
@@ -243,7 +288,8 @@ int main(int argc, char *argv[]) {
   struct timeval start, stop;
   if (rank == 0) {
     randMat(m, n, leftMat);
-    randMat(n, k, rightMat);
+    // transpose
+    randMat(k, n, rightMat);
     randMat(m, k, resMat);
   }
   gettimeofday(&start, NULL);
