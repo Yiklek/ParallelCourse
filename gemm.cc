@@ -113,7 +113,7 @@ void mpi_sgemm(int m, int n, int k, float *&leftMat, float *&rightMat,
     delete buf;
     */
     gettimeofday(&stop, NULL);
-    display_time(rank, start, stop, "transpose");
+    //display_time(rank, start, stop, "transpose");
 
     gettimeofday(&start, NULL);
     MPI_Request sendRequest[2 * worldsize];
@@ -146,7 +146,7 @@ void mpi_sgemm(int m, int n, int k, float *&leftMat, float *&rightMat,
     }
     res = new float[(m / rowBlock) * (k / colBlock)];
     gettimeofday(&stop, NULL);
-    display_time(rank, start, stop, "scatter");
+    //display_time(rank, start, stop, "scatter");
   } else {
     if (rank < worldsize) {
       MPI_Status status[2];
@@ -178,10 +178,10 @@ void mpi_sgemm(int m, int n, int k, float *&leftMat, float *&rightMat,
     colStride = ((rank % colBlock) == colBlock - 1)
                     ? k - (colBlock - 1) * (k / colBlock)
                     : k / colBlock;
-       cout << "left \n" << rowStride << " " << n << endl;
+      //cout << "left \n" << rowStride << " " << n << endl;
       // display_mat(leftMat, rowStride, n);
       // cout << endl;
-       cout << "right \n" << n << " " << colStride << endl;
+      //cout << "right \n" << n << " " << colStride << endl;
       // display_mat(rightMat, colStride, n);
     struct timeval start, stop;
     gettimeofday(&start, NULL);
@@ -197,7 +197,7 @@ void mpi_sgemm(int m, int n, int k, float *&leftMat, float *&rightMat,
     }
     #endif
     gettimeofday(&stop, NULL);
-    display_time(rank, start, stop, "gemm");
+    //display_time(rank, start, stop, "gemm");
   }
   MPI_Barrier(MPI_COMM_WORLD);
 
@@ -210,7 +210,7 @@ void mpi_sgemm(int m, int n, int k, float *&leftMat, float *&rightMat,
                 MPI_Status status;
 		//MPI_Request *status = new MPI_Request();
 		int len = (m - (rowBlock - 1) * (m / rowBlock)) * (k - (colBlock - 1) * (k / colBlock));
-		cout << len <<endl;
+		//cout << len <<endl;
 		float *buf = new float[len];
 		float *temp_res;
 		int rowStride = (rowB == rowBlock - 1) ? m - (rowBlock - 1) * (m / rowBlock)
@@ -233,7 +233,7 @@ void mpi_sgemm(int m, int n, int k, float *&leftMat, float *&rightMat,
 		  for (int c = 0; c < colStride; c++)
 		    resultMat[rowB * (m / rowBlock) * k + colB * (k / colBlock) +
 			      r * k + c] = temp_res[r * colStride + c];
-		cout << "recv end" << endl;
+		//cout << "recv end" << endl;
 		delete temp_res;
 		//delete status;
 	});
@@ -244,7 +244,7 @@ void mpi_sgemm(int m, int n, int k, float *&leftMat, float *&rightMat,
 	if(t.joinable()) t.join();
     }
     gettimeofday(&stop, NULL);
-    display_time(rank, start, stop, "gather");
+    //display_time(rank, start, stop, "gather");
 
   } else {
     rowStride = ((rank / colBlock) == rowBlock - 1)
