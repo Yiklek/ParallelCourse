@@ -20,7 +20,7 @@ message(STATUS "Using BLAS_INCLUDE_DIRS: ${BLAS_INCLUDE_DIRS}")
 include_directories(${PROJECT_SOURCE_DIR}) 
 include_directories(${BLAS_INCLUDE_DIRS})
 
-set(GEMM_LINK_LIBS BLAS::BLAS)
+set(GEMM_LINK_LIBS ${BLAS_LIBRARIES})
 
 set(SOURCE_FILES gemm.cc)
 add_executable(gemm ${SOURCE_FILES})
